@@ -1,0 +1,23 @@
+# Core scientific stack
+numpy
+scipy
+pandas
+scikit-learn
+matplotlib
+seaborn
+tqdm
+
+# PyTorch (with CUDA 11.8)
+torch==2.1.0+cu118
+torchvision==0.16.0+cu118
+torchaudio==2.1.0+cu118
+
+# PyTorch Geometric + dependencies (built for torch 2.1.0 + CUDA 11.8)
+torch-scatter==2.1.2+pt21cu118
+torch-sparse==0.6.18+pt21cu118
+torch-cluster==1.6.3+pt21cu118
+torch-spline-conv==1.2.2+pt21cu118
+torch-geometric==2.5.0
+
+# Optional: for tracking and visualization
+tensorboard
