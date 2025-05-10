@@ -6,6 +6,7 @@ scikit-learn
 matplotlib
 seaborn
 tqdm
+statsmodels
 
 # PyTorch (with CUDA 11.8)
 torch==2.1.0+cu118
