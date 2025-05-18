@@ -1,4 +1,4 @@
-# Netflix_Rec
+# Netflix Recommendation System: 3 Approaches
 
 A comparative analysis of three machine learning approaches for building recommendation systems using Netflix data.
 
