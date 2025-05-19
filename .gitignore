@@ -29,6 +29,3 @@ checkpoints/
 
 # Environment files (optional)
 .env
-
-# Raw Data
-data/
