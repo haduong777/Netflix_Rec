@@ -7,7 +7,7 @@ import pandas as pd
 import numpy as np
 from tqdm import tqdm
 
-from src.data.loader import get_partitioned_files, read_partition
+from src.data.loader import load_partitions, read_partition
 
 
 def sample_date_distribution(partition_files: List[Dict[str, Any]], 
@@ -237,7 +237,7 @@ def create_temporal_split(data_dir: str,
         Dictionary with split information
     """
 
-    partition_files = get_partitioned_files(data_dir)
+    partition_files = load_partitions(data_dir)
     print(f"Found {len(partition_files)} partition files")
     
     # sample dates -> dates distribution
