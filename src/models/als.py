@@ -69,7 +69,7 @@ class ALS:
 
       if iter % self.val_interval == 0:
         rmse = self._calculate_rmse(ratings)
-        print(f"Iteration {iter} -- RMSE: {rmse:.4f}")
+        print(f"\nIteration {iter} -- RMSE: {rmse:.4f}")
 
     return self.U, self.V
 
@@ -249,7 +249,7 @@ class ALS:
 
     rows, cols, data = [], [], []
 
-    for partition in tqdm(partitions, desc="Building sparse matrix..."):
+    for partition in tqdm(partitions, desc="Building sparse matrix"):
       df = pd.read_parquet(partition['path'], columns=columns)
 
       # map user_id, movie_id -> dense indices
@@ -260,7 +260,7 @@ class ALS:
                   if u != -1 and m != -1]
 
       if not valid_idx:
-        print(f"WARNING: Skipping partition {partition['path']} due to no valid mappings found")
+        print(f"\nWARNING: Skipping partition {partition['path']} due to no valid mappings found")
         continue
 
       # Append to COO format data
@@ -324,7 +324,7 @@ class ALS:
                         lambda_reg=self.lambda_reg,
                         default_prediction=self.default_prediction)
 
-    print(f"Saved checkpoint to {checkpoint_path}")
+    print(f"\nSaved checkpoint to {checkpoint_path}")
 
   def save_model(self, model_path: str):
     os.makedirs(os.path.dirname(model_path), exist_ok=True)
@@ -335,7 +335,7 @@ class ALS:
                         lambda_reg=self.lambda_reg,
                         default_prediction=self.default_prediction)
     
-    print(f"Trained Model saved at {model_path}")
+    print(f"\nTrained Model saved at {model_path}")
 
   @classmethod
   def load_model(cls, checkpoint_path: str, 
