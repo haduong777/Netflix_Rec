@@ -14,6 +14,7 @@ def load_partitions(dir):
     Returns
         List of dict of file metadata (path, part, group, movie_range)
     """
+
     partition_files = []
 
     file_pattern = re.compile(r'(train|validation)_part_(\d+)_group_(\d+)_movies_(\d+)-(\d+)\.parquet')
@@ -21,7 +22,7 @@ def load_partitions(dir):
     for filename in os.listdir(dir):
         match = file_pattern.match(filename)
         if match:
-            file_path = os.path.join(dir, filename)
+            file_path = os.path.join(data_dir, filename)
             dataset_type = match.group(1) 
             part_num = int(match.group(2))
             group_num = int(match.group(3))
