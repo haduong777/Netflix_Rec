@@ -100,7 +100,7 @@ def split_partition_files(partition_files: List[Dict[str, Any]],
             train_path = os.path.join(output_dir, 'train', 
                                       f"part_{file_info['part']}_{file_info['group']}.parquet")
 
-            train_df.to_parquet(train_path)
+            train_df.to_parquet(train_path, compression='zstd')
             train_file_info = {
                 'path': train_path,
                 'part': file_info['part'],
@@ -112,7 +112,7 @@ def split_partition_files(partition_files: List[Dict[str, Any]],
         
         if len(validation_df) > 0:
             validation_path = os.path.join(output_dir, 'validation', f"part_{file_info['part']}_{file_info['group']}.parquet")
-            validation_df.to_parquet(validation_path)
+            validation_df.to_parquet(validation_path, compression='zstd')
             validation_file_info = {
                 'path': validation_path,
                 'part': file_info['part'],
