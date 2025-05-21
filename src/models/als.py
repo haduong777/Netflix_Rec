@@ -4,6 +4,8 @@ import os
 from typing import List, Dict, Tuple, Optional, Callable
 from scipy.sparse import csr_matrix
 from tqdm import tqdm
+import time
+import json
 
 class ALS:
   def __init__(self, 
@@ -11,12 +13,14 @@ class ALS:
               lambda_reg: float = 0.1,
               num_iters: int = 20,
               val_interval: int = 10,
+              checkpoint_interval: int=5,
               default_prediction: float = 3.0):
   
     self.num_factors = num_factors
     self.lambda_reg = lambda_reg
     self.num_iters = num_iters
     self.val_interval = val_interval
+    self.checkpoint_interval = checkpoint_interval
     self.default_prediction = default_prediction
 
     self.user_map = None
@@ -64,8 +68,9 @@ class ALS:
       # Update movie latent factors
       self.V = self._solve_movie_factors(ratings_t)
 
-      if checkpoint_dir:
-        self.save_checkpoint(checkpoint_dir, iter)
+      if iter % self.checkpoint_interval == 0:   
+        if checkpoint_dir:
+          self.save_checkpoint(checkpoint_dir, iter)
 
       if iter % self.val_interval == 0:
         rmse = self._calculate_rmse(ratings)
@@ -316,6 +321,8 @@ class ALS:
 
     checkpoint_path = os.path.join(checkpoint_dir, f"checkpoint_{iteration}.npz")
 
+    start_time = time.time()
+
     np.savez_compressed(checkpoint_path, 
                         U=self.U, 
                         V=self.V, 
@@ -324,10 +331,13 @@ class ALS:
                         lambda_reg=self.lambda_reg,
                         default_prediction=self.default_prediction)
 
-    print(f"\nSaved checkpoint to {checkpoint_path}")
+    print(f"\nSaved checkpoint to {checkpoint_path}, in {time.time()-start_time} seconds")
 
-  def save_model(self, model_path: str):
+  def save_model(self, model_path: str, val_rmse: Optional[float]=None):
     os.makedirs(os.path.dirname(model_path), exist_ok=True)
+
+    start_time = time.time()
+
     np.savez_compressed(model_path, 
                         U=self.U, 
                         V=self.V,
@@ -335,7 +345,23 @@ class ALS:
                         lambda_reg=self.lambda_reg,
                         default_prediction=self.default_prediction)
     
-    print(f"\nTrained Model saved at {model_path}")
+    print(f"\nTrained Model saved at {model_path}, in {time.time()-start_time} seconds")
+
+    metadata = {
+        "model_type": "ALS",
+        "num_factors": self.num_factors,
+        "lambda_reg": self.lambda_reg,
+        "num_iterations": self.num_iters,
+        "val_rmse": val_rmse,
+        "default_prediction": self.default_prediction,
+        "users_count": self.U.shape[0],
+        "movies_count": self.V.shape[0],
+        "saved_at": time.strftime("%Y-%m-%d %H:%M:%S")
+    }
+
+    metadata_path = f"{os.path.splitext(model_path)[0]}_metadata.json"
+    with open(metadata_path, 'w') as f:
+      json.dump(metadata, f, indent=2)
 
   @classmethod
   def load_model(cls, checkpoint_path: str, 
