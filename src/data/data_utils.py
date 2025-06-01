@@ -3,7 +3,59 @@ import json
 from typing import Dict, List, Any, Optional, Tuple
 import pandas as pd
 import numpy as np
+from tqdm import tqdm
 import re
+
+def map_id(partition_files: List[Dict], sample_size=None):
+    """
+    Map user and movie ids to denser indicies -> for matrix factorization
+    """
+    
+    user_ids = set()
+    movie_ids = set()
+    
+    if sample_size and sample_size < len(partition_files):
+        partition_sample = random.sample(partition_files, sample_size)
+    else:
+        partition_sample = partition_files
+    
+    for partition in tqdm(partition_sample, desc="Mapping IDs"):
+        df = pd.read_parquet(partition['path'], columns=['user_id', 'movie_id'])
+        
+        user_ids.update(df['user_id'].unique())
+        movie_ids.update(df['movie_id'].unique())
+    
+    user_id_map = {user_id: idx for idx, user_id in enumerate(sorted(user_ids))}
+    movie_id_map = {movie_id: idx for idx, movie_id in enumerate(sorted(movie_ids))}
+    
+    print(f"Map successful for {len(user_id_map)} users, {len(movie_id_map)} movies")
+    
+    return user_id_map, movie_id_map
+
+def get_data(data_dir: str):
+    """
+    Get partitions metadata in the form part_X_X.parquet
+    """
+    partition_files = []
+    
+    pattern = re.compile(r'part_(\d+)_(\d+)\.parquet$')
+    
+    for filename in os.listdir(data_dir):
+        match = pattern.match(filename)
+        if match:
+            file_path = os.path.join(data_dir, filename)
+            part_num = int(match.group(1))
+            group_num = int(match.group(2))
+        
+            partition_files.append({
+                'path': file_path,
+                'part': part_num,
+                'group': group_num
+            })
+    
+    # sorted partitions in order
+    partition_files.sort(key=lambda x: (x['part'], x['group']))
+    return partition_files
 
 def create_id_mappings(partition_files: List[Dict[str, Any]]):
     """
@@ -26,46 +78,6 @@ def create_id_mappings(partition_files: List[Dict[str, Any]]):
     movie_map = {movie_id: idx for idx, movie_id in enumerate(sorted(movie_ids))}
 
     return user_map, movie_map
-
-
-def save_mappings(user_map: Dict[int, int], movie_map: Dict[int, int], output_path: str):
-    """
-    Stores user and movie ID mappings in JSON format
-    """
-
-    user_map_str = {str(k): v for k, v in user_map.items()}
-    movie_map_str = {str(k): v for k, v in movie_map.items()}
-
-    with open(os.path.join(output_path, "user_map.json"), "w") as f:
-        json.dump(user_map_str, f)
-
-    with open(os.path.join(output_path, "movie_map.json"), "w") as f:
-        json.dump(movie_map_str, f)
-
-
-
-def load_mappings(mappings_dir: str):
-    """
-    Load ID mappings from json, fast lookup
-    """
-
-    with open(os.path.join(mappings_dir, "user_map.json"), "r") as f:
-        user_map = json.load(f)
-
-    with open(os.path.join(mappings_dir, "movie_map.json"), "r") as f:
-        movie_map = json.load(f)
-
-    return user_map, movie_map
-
-
-def analyze_partition_metadata(partition_files: List[Dict[str, Any]]):
-    """
-    General stats analysis
-    """
-
-    ## MIGHT NOT NEED
-
-    return stats
 
 
 def convert_ids_to_indices(df: pd.DataFrame, user_map: Dict[int, int], movie_map: Dict[int, int]):

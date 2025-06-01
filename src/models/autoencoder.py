@@ -130,8 +130,8 @@ class AutoEncoder(nn.Module):
       user_ratings_vec, mask = self.create_user_ratings(user_ratings, movie_map)
 
       with torch.no_grad():
-        user_ratings_vec = torch.tensor(user_ratings_vec, dtype=torch.float32).unsqueeze(0).to_device(self.device)
-        mask = torch.tensor(mask, dtype=torch.float32).unsqueeze(0).to_device(self.device)
+        user_ratings_vec = torch.tensor(user_ratings_vec, dtype=torch.float32).unsqueeze(0).to(self.device)
+        mask = torch.tensor(mask, dtype=torch.float32).unsqueeze(0).to(self.device)
 
         predictions = self.forward(user_ratings_vec, mask)
 
@@ -186,34 +186,36 @@ class AutoEncoder(nn.Module):
 
     def load_user_data(self, partitions: List[Dict],
                        user_map: Dict[int, int]):
-      """
-      Loads user data from partitions ***CURRENTLY MEMORY INTENSIVE***
-
-      Args
+        """
+        Loads user data from partitions ***CURRENTLY MEMORY INTENSIVE***
+        
+        Args
         partitions: List of dicts with 'path' and 'users' keys
         user_map: Dict of {user_id: mapped_user_id}
-
-      returns
+        
+        returns
         data: Dict of {user_id: List of (movie_id, rating)}
-      """
+        """
+        
+        data = {}
 
-      data = {}
+        # f contains partitions' metadata
+        for f in tqdm(partitions, desc="Loading user data"):
+            df = pd.read_parquet(f['path'])
 
-      for f in tqdm(partitions, desc="Loading user data"):
-        df = pd.read_parquet(f['path'])
+        for user_id, user_ratings in df.groupby('user_id'):
+            if user_id in user_map:
+                mapped_user = user_map[user_id]
 
-        for user_id in f['users'].unique():
-          if user_id in user_map:
-            mapped_user = user_map[user_id]
-            ratings = df[df['user_id'] == user_id][['movie_id','rating']]
+                if mapped_user not in data:
+                    data[mapped_user] = []
 
-            if mapped_user not in data:
-              data[mapped_user] = []
+                ratings = [(int(row['movie_id']), float(row['rating']))
+                           for _, row in user_ratings.iterrows()]
 
-            data[mapped_user].extend([(int(movie_id), float(rating))
-                                       for movie_id, rating in ratings])
-
-      return data
+                data[mapped_user].extend(ratings)
+        
+        return data
 
     def get_latent(self, user_data: Dict[int, List[Tuple[int, float]]],
                    movie_map: Dict[int, int],
