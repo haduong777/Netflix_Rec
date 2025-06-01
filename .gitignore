@@ -29,3 +29,6 @@ checkpoints/
 
 # Environment files (optional)
 .env
+
+# Raw Data
+NETFLIX_DATA/
