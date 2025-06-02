@@ -22,6 +22,7 @@ runs/
 *.ckpt
 *.pth
 *.pt
+model_checkpoints/
 checkpoints/
 
 # VSCode settings (optional)
@@ -32,3 +33,7 @@ checkpoints/
 
 # Raw Data
 NETFLIX_DATA/
+notebooks/.nfs000000000002e5ae00000011
+
+# Optuna tuning
+*.db

@@ -9,6 +9,7 @@ from tqdm import tqdm
 import random
 import gzip
 from .autoencoder import AutoEncoder
+import optuna
 
 def train_autoencoder(
     train_partitions: List[Dict],
@@ -24,7 +25,10 @@ def train_autoencoder(
     checkpoint_interval: int = 5,
     eval_interval: int = 5,
     validation_partitions: Optional[List[Dict]] = None,
-    resume_path: Optional[str]=None
+    resume_path: Optional[str]=None,
+    trial: Optional[optuna.Trial]=None,
+    user_data: Optional[Dict]=None,
+    validation_data: Optional[Dict]=None
 ):
     """
     Train autoencoder on Netflix partitioned data.
@@ -42,10 +46,14 @@ def train_autoencoder(
         checkpoint_dir: Directory for checkpoints
         checkpoint_interval: Checkpoint frequency
         validation_partitions: Optional validation data
+        resume_path: Path to latest checkpoint
+        trial: Optional optuna trial for tuning
+        user_data: Optional preloaded train user data
+        validation_data: Optional preloaded validation user data
     """
     
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-    print(f"Training on device: {device}")
+    print(f"Device: {device}")
     
     # calculate global mean for default predictions
     global_mean = calculate_global_mean(train_partitions)
@@ -62,11 +70,11 @@ def train_autoencoder(
     
     optimizer = optim.Adam(model.parameters(), lr=learning_rate)
     
-    # load users data for training and val
-    user_data = model.load_user_data(train_partitions, user_map)
+    # use passed user data or load new
+    if user_data is None:
+        user_data = model.load_user_data(train_partitions, user_map)
     
-    validation_data = None
-    if validation_partitions:
+    if validation_partitions and validation_data is None:
         validation_data = model.load_user_data(validation_partitions, user_map)
 
     # check for checkpoint to resume
@@ -128,9 +136,19 @@ def train_autoencoder(
         # validation
         if validation_data and epoch % eval_interval == 0:
             #val_loss = evaluate_model(model, validation_data, movie_map, device)
-            val_loss = evaluate_model(model, validation_data, movie_map, device)['loss']
+            eval_results = evaluate_model(model, validation_data, movie_map, device)
+            
+            val_loss = eval_results['loss']
+            val_rmse = eval_results['rmse']
+
+            # check if tuning, if yes report back if rmse is bad
+            if trial is not None:
+                trial.report(val_rmse, epoch)
+                if trial.should_prune(): 
+                    raise optuna.TrialPruned() 
+            
             model.train()
-            print(f"Validation Loss: {val_loss:.4f}")
+            print(f"Validation | Loss: {val_loss:.4f}, RMSE: {val_rmse:.4f}")
         
         # checkpointing
         if checkpoint_dir and (epoch + 1) % checkpoint_interval == 0:
@@ -180,7 +198,7 @@ def train_autoencoder(
 
         print(f"Saved final model at {final_path}")
     
-    return model
+    return model, val_rmse
 
 def load_checkpoint(path, model, optimizer, device):
     with gzip.open(path, 'rb') as f:
@@ -255,6 +273,7 @@ def evaluate_model(
             batch_masks = batch_masks.to(device)
             
             predictions = model(batch_ratings, batch_masks)
+            
             loss = model.masked_loss(predictions, batch_ratings, batch_masks)
 
             observed_mask = batch_masks.bool()
@@ -269,9 +288,8 @@ def evaluate_model(
                 total_mae += mae.item() * observed_predictions.size(0)
                 total_rmse += mse.item() * observed_predictions.size(0)
                 total_predictions += observed_predictions.size(0)
-                total_loss += loss.item()
-                
-            num_batches += 1
+
+                num_batches += 1
     
     model.train()
 

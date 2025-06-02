@@ -184,10 +184,11 @@ class AutoEncoder(nn.Module):
 
       return np.array(predictions)
 
-    def load_user_data(self, partitions: List[Dict],
+    @staticmethod
+    def load_user_data(partitions: List[Dict],
                        user_map: Dict[int, int]):
         """
-        Loads user data from partitions ***CURRENTLY MEMORY INTENSIVE***
+        Loads user data from partitions
         
         Args
         partitions: List of dicts with 'path' and 'users' keys
@@ -203,7 +204,7 @@ class AutoEncoder(nn.Module):
         for f in tqdm(partitions, desc="Loading user data"):
             df = pd.read_parquet(f['path'])
 
-        for user_id, user_ratings in df.groupby('user_id'):
+        for user_id, user_ratings in tqdm(df.groupby('user_id'), desc="Building user rating profiles"):
             if user_id in user_map:
                 mapped_user = user_map[user_id]
 
