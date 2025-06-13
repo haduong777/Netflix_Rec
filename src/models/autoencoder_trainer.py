@@ -1,7 +1,7 @@
 import os
 import torch
 import torch.optim as optim
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple
 import numpy as np
 import pandas as pd
 from pathlib import Path
@@ -75,7 +75,7 @@ def train_autoencoder(
         user_data = model.load_user_data(train_partitions, user_map)
     
     if validation_partitions and validation_data is None:
-        validation_data = model.load_user_data(validation_partitions, user_map)
+        validation_data = model.load_validation_data(validation_partitions, user_map)
 
     # check for checkpoint to resume
     start_epoch = 0 
@@ -136,7 +136,12 @@ def train_autoencoder(
         # validation
         if validation_data and epoch % eval_interval == 0:
             #val_loss = evaluate_model(model, validation_data, movie_map, device)
-            eval_results = evaluate_model(model, validation_data, movie_map, device)
+            eval_results = evaluate_model(model=model, 
+                                          validation_data=validation_data, 
+                                          training_data=user_data, 
+                                          user_map=user_map, 
+                                          movie_map=movie_map, 
+                                          device=device)
             
             val_loss = eval_results['loss']
             val_rmse = eval_results['rmse']
@@ -245,7 +250,88 @@ def create_batch_tensors(
 
 def evaluate_model(
     model,
-    validation_data: Dict[int, List],
+    validation_data: List[Tuple[int, int, float]],
+    training_data: Dict[int, List[Tuple[int, float]]],
+    user_map: Dict[int, int],
+    movie_map: Dict[int, int],
+    device: torch.device,
+    batch_size: int = 512
+):
+    """Evaluate model on validation data."""
+    model.eval()
+    num_movies = len(movie_map)
+
+    predictions = []
+    targets = []
+
+    with torch.no_grad():
+        for i in tqdm(range(0, len(validation_data), batch_size), desc="Evaluating"):
+            batch = validation_data[i:i+batch_size]
+            batch_predictions = []
+            batch_targets = []
+
+            for user_id, movie_id, true_rating in batch:
+
+                # cold start strategy predict global mean
+                if user_id not in user_map or movie_id not in movie_map:
+                    prediction = model.global_mean
+                else:
+                    mapped_user = user_map[user_id]
+    
+                    # user isn't in training data
+                    if mapped_user not in training_data:
+                        prediction = model.global_mean
+                    else:
+                        # get user data for all other movies except target
+                        user_ratings = [(m_id, rating) for (m_id, rating) in training_data[mapped_user] 
+                                        if m_id != movie_id]
+        
+                        if len(user_ratings) > 0:
+                            # input vector
+                            ratings_vec = np.full(num_movies, model.global_mean)
+                            mask = np.zeros(num_movies)
+        
+                            for m_id, rating in user_ratings:
+                                if m_id in movie_map:
+                                    movie_idx = movie_map[m_id]
+                                    ratings_vec[movie_idx] = rating
+                                    mask[movie_idx] = 1.0
+        
+                            input_tensor = torch.tensor(ratings_vec, dtype=torch.float32).unsqueeze(0).to(device)
+                            mask_tensor = torch.tensor(mask, dtype=torch.float32).unsqueeze(0).to(device)
+        
+                            predictions_tensor = model(input_tensor, mask_tensor)
+                            target_idx = movie_map[movie_id]
+                            prediction = predictions_tensor[0, target_idx].item()
+                        else:
+                            # user doesnt have any training ratings
+                            prediction = model.global_mean
+                        
+                batch_predictions.append(prediction)
+                batch_targets.append(true_rating)
+    
+            predictions.extend(batch_predictions)
+            targets.extend(batch_targets)
+
+    model.train()
+
+    predictions_arr = np.array(predictions)
+    targets_arr = np.array(targets)
+
+    mse = np.mean((predictions_arr - targets_arr) ** 2)
+    rmse = np.sqrt(mse)
+    mae = np.mean(np.abs(predictions_arr - targets_arr))
+    
+    return {
+        'loss': mse,
+        'rmse': rmse,
+        'mae': mae,
+        'total_predictions': len(predictions)
+    }
+
+def evaluate_model_BAK(
+    model,
+    validation_data: List[Tuple[int, int, float]],
     movie_map: Dict[int, int],
     device: torch.device,
     batch_size: int = 512

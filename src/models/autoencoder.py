@@ -200,23 +200,68 @@ class AutoEncoder(nn.Module):
         
         data = {}
 
+        count = 0
+
         # f contains partitions' metadata
-        for f in tqdm(partitions, desc="Loading user data"):
+        for f in partitions:
             df = pd.read_parquet(f['path'])
 
-        for user_id, user_ratings in tqdm(df.groupby('user_id'), desc="Building user rating profiles"):
-            if user_id in user_map:
-                mapped_user = user_map[user_id]
+            count += 1
 
+            mask = df['user_id'].isin(user_map.keys())
+            df_filtered = df[mask]
+
+            for _, row in tqdm(df_filtered.iterrows(), desc=f"Loading users' rating profile {count}/{len(partitions)}",
+                               total = len(df)):
+                user_id = int(row['user_id'])
+
+                mapped_user = user_map[user_id]
+    
                 if mapped_user not in data:
                     data[mapped_user] = []
-
-                ratings = [(int(row['movie_id']), float(row['rating']))
-                           for _, row in user_ratings.iterrows()]
-
-                data[mapped_user].extend(ratings)
-        
+    
+                movie_id = int(row['movie_id'])
+                rating = float(row['rating'])
+    
+                data[mapped_user].append((movie_id,rating))
+                
+        del df, df_filtered
+    
         return data
+
+    @staticmethod
+    def load_validation_data(partitions: List[Dict],
+                             user_map: Dict[int, int],
+                             movie_map: Dict[int, int]):
+        """
+        Loads user data from partitions
+        
+        Args
+        partitions: List of dicts with 'path' and 'users' keys
+        user_map: Dict of {user_id: mapped_user_id}
+        
+        returns
+        data: List of user-movie-rating tuples [(user, movie, rating)]
+        """
+
+        validation = []
+        count = 0
+
+        for f in partitions:
+            df = pd.read_parquet(f['path'])
+
+            count += 1
+
+            for _, row in tqdm(df.iterrows(), desc=f"Loading validation pairs {count}/{len(partitions)}",
+                               total = len(df)):
+                user_id = int(row['user_id'])
+                movie_id = int(row['movie_id'])
+                rating = float(row['rating'])
+
+                if user_id in user_map and movie_id in movie_map:
+                    validation.append((user_id, movie_id, rating))
+
+        return validation
 
     def get_latent(self, user_data: Dict[int, List[Tuple[int, float]]],
                    movie_map: Dict[int, int],
