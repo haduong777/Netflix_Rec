@@ -58,6 +58,8 @@ def train_autoencoder(
     # calculate global mean for default predictions
     global_mean = calculate_global_mean(train_partitions)
     print(f"Global mean rating: {global_mean:.3f}")
+
+    val_rmse = None
     
     # init
     model = AutoEncoder(
