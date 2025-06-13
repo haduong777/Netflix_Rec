@@ -134,7 +134,7 @@ def train_autoencoder(
         print(f"Epoch {epoch+1} - Average Loss: {avg_loss:.4f}")
         
         # validation
-        if validation_data and epoch % eval_interval == 0:
+        if validation_data and (epoch + 1) % eval_interval == 0:
             #val_loss = evaluate_model(model, validation_data, movie_map, device)
             eval_results = evaluate_model(model=model, 
                                           validation_data=validation_data, 
@@ -260,64 +260,79 @@ def evaluate_model(
     """Evaluate model on validation data."""
     model.eval()
     num_movies = len(movie_map)
-
     predictions = []
     targets = []
-
+    
     with torch.no_grad():
         for i in tqdm(range(0, len(validation_data), batch_size), desc="Evaluating"):
             batch = validation_data[i:i+batch_size]
-            batch_predictions = []
-            batch_targets = []
-
-            for user_id, movie_id, true_rating in batch:
-
-                # cold start strategy predict global mean
-                if user_id not in user_map or movie_id not in movie_map:
-                    prediction = model.global_mean
-                else:
-                    mapped_user = user_map[user_id]
+            
+            # Separate into model predictions vs global mean predictions
+            model_batch = []
+            global_mean_batch = []
+            
+            # Pre-allocate batch tensors
+            batch_ratings_list = []
+            batch_masks_list = []
+            batch_target_indices = []
+            
+            for j, (user_id, movie_id, true_rating) in enumerate(batch):
+                # Handle cold start cases
+                if (user_id not in user_map or movie_id not in movie_map or 
+                    user_map[user_id] not in training_data):
+                    global_mean_batch.append((model.global_mean, true_rating))
+                    continue
+                
+                mapped_user = user_map[user_id]
+                target_idx = movie_map[movie_id]
+                
+                # Get user ratings (excluding target)
+                user_ratings = [(m_id, rating) for m_id, rating in training_data[mapped_user] 
+                              if m_id != movie_id]
+                
+                if len(user_ratings) == 0:
+                    global_mean_batch.append((model.global_mean, true_rating))
+                    continue
+                
+                # Create rating vector
+                ratings_vec = np.full(num_movies, model.global_mean, dtype=np.float32)
+                mask_vec = np.zeros(num_movies, dtype=np.float32)
+                
+                for m_id, rating in user_ratings:
+                    if m_id in movie_map:
+                        movie_idx = movie_map[m_id]
+                        ratings_vec[movie_idx] = rating
+                        mask_vec[movie_idx] = 1.0
+                
+                batch_ratings_list.append(ratings_vec)
+                batch_masks_list.append(mask_vec)
+                batch_target_indices.append(target_idx)
+                model_batch.append(true_rating)
+            
+            # Process global mean predictions
+            for pred, target in global_mean_batch:
+                predictions.append(pred)
+                targets.append(target)
+            
+            # Process model predictions in TRUE batch
+            if batch_ratings_list:
+                # Create batch tensors (single GPU transfer)
+                batch_ratings = torch.from_numpy(np.array(batch_ratings_list)).to(device)
+                batch_masks = torch.from_numpy(np.array(batch_masks_list)).to(device)
+                
+                # Single model forward pass for entire batch
+                batch_predictions = model(batch_ratings, batch_masks)
+                
+                # Extract target predictions
+                for idx, (target_idx, true_rating) in enumerate(zip(batch_target_indices, model_batch)):
+                    prediction = batch_predictions[idx, target_idx].item()
+                    predictions.append(prediction)
+                    targets.append(true_rating)
     
-                    # user isn't in training data
-                    if mapped_user not in training_data:
-                        prediction = model.global_mean
-                    else:
-                        # get user data for all other movies except target
-                        user_ratings = [(m_id, rating) for (m_id, rating) in training_data[mapped_user] 
-                                        if m_id != movie_id]
-        
-                        if len(user_ratings) > 0:
-                            # input vector
-                            ratings_vec = np.full(num_movies, model.global_mean)
-                            mask = np.zeros(num_movies)
-        
-                            for m_id, rating in user_ratings:
-                                if m_id in movie_map:
-                                    movie_idx = movie_map[m_id]
-                                    ratings_vec[movie_idx] = rating
-                                    mask[movie_idx] = 1.0
-        
-                            input_tensor = torch.tensor(ratings_vec, dtype=torch.float32).unsqueeze(0).to(device)
-                            mask_tensor = torch.tensor(mask, dtype=torch.float32).unsqueeze(0).to(device)
-        
-                            predictions_tensor = model(input_tensor, mask_tensor)
-                            target_idx = movie_map[movie_id]
-                            prediction = predictions_tensor[0, target_idx].item()
-                        else:
-                            # user doesnt have any training ratings
-                            prediction = model.global_mean
-                        
-                batch_predictions.append(prediction)
-                batch_targets.append(true_rating)
-    
-            predictions.extend(batch_predictions)
-            targets.extend(batch_targets)
-
     model.train()
-
+    
     predictions_arr = np.array(predictions)
     targets_arr = np.array(targets)
-
     mse = np.mean((predictions_arr - targets_arr) ** 2)
     rmse = np.sqrt(mse)
     mae = np.mean(np.abs(predictions_arr - targets_arr))
